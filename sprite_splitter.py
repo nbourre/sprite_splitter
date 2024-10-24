@@ -107,5 +107,5 @@ def separate_lines(image_path, output_folder='data', target_heights=[32, 48, 64,
     print(f"Lines extracted and saved to '{output_folder}'.")
 if __name__ == '__main__':
     # Path to your spritesheet image
-    spritesheet_path = 'c:/temp/adventure_time.png'
+    spritesheet_path = 'adventure_time.png'
     separate_lines(spritesheet_path)
