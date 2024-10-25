@@ -8,6 +8,7 @@ TODO :
   - Some resulting sprites are more like particles from a main sprite. Find a way to filter out these particles and include them in the main sprite.
   - When finding rows that are less than 32 pixels in height, this means that the subsequent rows are part of the same animation.
     Find a way to group these rows together.
+    - Algo : Loop through the countours by x position instead of size.
 '''
 
 def find_next_standard_size(size, standards=[32, 64, 128, 256, 512]):
@@ -32,6 +33,41 @@ def pad_sprite(sprite, target_width, target_height):
         borderType=cv2.BORDER_CONSTANT, value=(0, 0, 0, 0)  # Transparent padding for RGBA
     )
     return padded_sprite
+
+def merge_intersecting_boxes(contours, x_margin=1, y_margin=1):
+    """Merges intersecting bounding boxes within the same row, with an acceptable margin in X and Y directions."""
+    merged_boxes = []
+
+    # Sort contours by their x position
+    contours = sorted(contours, key=lambda c: cv2.boundingRect(c)[0])
+
+    # Initialize the first bounding box
+    x, y, w, h = cv2.boundingRect(contours[0])
+    current_box = [x - x_margin, y - y_margin, x + w + x_margin, y + h + y_margin]  # Expanded current box with margins
+
+    for contour in contours[1:]:
+        x, y, w, h = cv2.boundingRect(contour)
+        box = [x - x_margin, y - y_margin, x + w + x_margin, y + h + y_margin]  # Expanded box with margins
+
+        # Check if the current box intersects with the new box (with margins)
+        if not (box[0] > current_box[2] or box[2] < current_box[0] or
+                box[1] > current_box[3] or box[3] < current_box[1]):
+            # Merge the boxes by expanding the current_box
+            current_box[0] = min(current_box[0], box[0])
+            current_box[1] = min(current_box[1], box[1])
+            current_box[2] = max(current_box[2], box[2])
+            current_box[3] = max(current_box[3], box[3])
+        else:
+            # Finalize the current box without margins and start a new one
+            merged_boxes.append([current_box[0] + x_margin, current_box[1] + y_margin, 
+                                 current_box[2] - x_margin, current_box[3] - y_margin])
+            current_box = box
+
+    # Append the last current box without margins
+    merged_boxes.append([current_box[0] + x_margin, current_box[1] + y_margin, 
+                         current_box[2] - x_margin, current_box[3] - y_margin])
+    return merged_boxes
+
 
 def process_rows(image_path, output_image_path='final_spritesheet.png', target_standards=[32, 64, 128, 256, 512], separation=10):
     """Processes the rows and generates a single image with standard width and height padding for all sprites."""
@@ -75,11 +111,20 @@ def process_rows(image_path, output_image_path='final_spritesheet.png', target_s
         _, line_thresh = cv2.threshold(gray_line, 1, 255, cv2.THRESH_BINARY)
         contours, _ = cv2.findContours(line_thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
+        # Merge intersecting bounding boxes in the row
+        merged_boxes = merge_intersecting_boxes(contours)
+
         row_sprites.append([])
 
-        for contour in contours:
-            x, y, w, h = cv2.boundingRect(contour)
-            sprite = line_image[y:y+h, x:x+w]
+        for box in merged_boxes:
+            x_min, y_min, x_max, y_max = box
+            w, h = x_max - x_min, y_max - y_min
+
+            # Ignore small merged boxes
+            if w < 15 or h < 15:
+                continue
+
+            sprite = line_image[y_min:y_max, x_min:x_max]
             row_sprites[-1].append(sprite)
 
             # Update largest width and height found
@@ -127,6 +172,7 @@ def process_rows(image_path, output_image_path='final_spritesheet.png', target_s
     final_image_pil.save(output_image_path)
 
     print(f"Final image saved as '{output_image_path}'.")
+
 
 
 # Example usage
