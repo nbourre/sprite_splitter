@@ -69,7 +69,7 @@ def merge_intersecting_boxes(contours, x_margin=1, y_margin=1):
     return merged_boxes
 
 
-def process_rows(image_path, output_image_path='final_spritesheet.png', target_standards=[32, 64, 128, 256, 512], separation=10):
+def process_rows(image_path, output_image_path='final_spritesheet.png', target_standards=[32, 64, 128, 256, 512], separation=10, ignore_height=32):
     """Processes the rows and generates a single image with standard width and height padding for all sprites."""
     # Load the image with OpenCV
     image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
@@ -103,7 +103,7 @@ def process_rows(image_path, output_image_path='final_spritesheet.png', target_s
         line_height = end_y - start_y
 
         # Ignore rows less than 32 pixels in height
-        if line_height < 32:
+        if line_height < ignore_height:
             continue
 
         line_image = image[start_y:end_y, :]
@@ -176,5 +176,5 @@ def process_rows(image_path, output_image_path='final_spritesheet.png', target_s
 
 
 # Example usage
-image_path = 'adventure_time.png'
-process_rows(image_path, output_image_path='final_spritesheet.png')
+image_path = 'mario_all.png'
+process_rows(image_path, output_image_path='final_spritesheet.png', ignore_height=5)
