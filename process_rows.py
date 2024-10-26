@@ -69,6 +69,10 @@ def merge_intersecting_boxes(contours, x_margin=1, y_margin=1):
     return merged_boxes
 
 
+import cv2
+import numpy as np
+from PIL import Image
+
 def process_rows(image_path, output_image_path='final_spritesheet.png', target_standards=[32, 64, 128, 256, 512], separation=10, ignore_height=32):
     """Processes the rows and generates a single image with standard width and height padding for all sprites."""
     # Load the image with OpenCV
@@ -95,6 +99,10 @@ def process_rows(image_path, output_image_path='final_spritesheet.png', target_s
             in_line = False
             lines.append((line_start, line_end))
 
+    # Ensure the last line is included if still in line
+    if in_line:
+        lines.append((line_start, len(pixel_sums)))
+
     # Find the largest width and height in all rows
     largest_width, largest_height = 0, 0
     row_sprites = []
@@ -102,7 +110,7 @@ def process_rows(image_path, output_image_path='final_spritesheet.png', target_s
     for line_num, (start_y, end_y) in enumerate(lines):
         line_height = end_y - start_y
 
-        # Ignore rows less than 32 pixels in height
+        # Ignore rows less than ignore_height
         if line_height < ignore_height:
             continue
 
@@ -176,5 +184,5 @@ def process_rows(image_path, output_image_path='final_spritesheet.png', target_s
 
 
 # Example usage
-image_path = 'mario_all.png'
-process_rows(image_path, output_image_path='final_spritesheet.png', ignore_height=5)
+image_path = 'Found_Sword.png'
+process_rows(image_path, output_image_path='final_spritesheet.png', ignore_height=20)
