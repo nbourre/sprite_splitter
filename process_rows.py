@@ -59,12 +59,12 @@ def merge_intersecting_boxes(contours, x_margin=1, y_margin=1):
             current_box[3] = max(current_box[3], box[3])
         else:
             # Finalize the current box without margins and start a new one
-            merged_boxes.append([current_box[0] + x_margin, current_box[1] + y_margin, 
+            merged_boxes.append([current_box[0] + x_margin, current_box[1] + y_margin,
                                  current_box[2] - x_margin, current_box[3] - y_margin])
             current_box = box
 
     # Append the last current box without margins
-    merged_boxes.append([current_box[0] + x_margin, current_box[1] + y_margin, 
+    merged_boxes.append([current_box[0] + x_margin, current_box[1] + y_margin,
                          current_box[2] - x_margin, current_box[3] - y_margin])
     return merged_boxes
 
@@ -184,5 +184,5 @@ def process_rows(image_path, output_image_path='final_spritesheet.png', target_s
 
 
 # Example usage
-image_path = 'Found_Sword.png'
-process_rows(image_path, output_image_path='final_spritesheet.png', ignore_height=20)
+image_path = 'adventure_time.png'
+process_rows(image_path, output_image_path='final_spritesheet.png',  separation=0 ,ignore_height=35)
