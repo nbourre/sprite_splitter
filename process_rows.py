@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
 import os
+import json
+import argparse
 from PIL import Image
 
 '''
@@ -10,6 +12,213 @@ TODO :
     Find a way to group these rows together.
     - Algo : Loop through the countours by x position instead of size.
 '''
+
+CONFIG_FILE = 'config.json'
+
+def load_config():
+    """Load configuration from JSON file."""
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            pass
+    return {
+        'last_input_file': '',
+        'last_magic_color': None,
+        'last_color_tolerance': 50,
+        'last_ignore_height': 35,
+        'last_separation': 0
+    }
+
+def save_config(config):
+    """Save configuration to JSON file."""
+    with open(CONFIG_FILE, 'w') as f:
+        json.dump(config, f, indent=2)
+
+def parse_color(color_str):
+    """Parse color from string (hex or RGB format).
+    
+    Args:
+        color_str: Color as hex (#FF00FF) or RGB (255,0,255 or 255 0 255)
+    
+    Returns:
+        Tuple of (R, G, B) or None if invalid
+    """
+    color_str = color_str.strip()
+    
+    # Try hex format
+    if color_str.startswith('#'):
+        try:
+            color_str = color_str[1:]
+            if len(color_str) == 6:
+                r = int(color_str[0:2], 16)
+                g = int(color_str[2:4], 16)
+                b = int(color_str[4:6], 16)
+                return (r, g, b)
+        except:
+            pass
+    
+    # Try RGB format (comma or space separated)
+    try:
+        parts = color_str.replace(',', ' ').split()
+        if len(parts) == 3:
+            r, g, b = int(parts[0]), int(parts[1]), int(parts[2])
+            if 0 <= r <= 255 and 0 <= g <= 255 and 0 <= b <= 255:
+                return (r, g, b)
+    except:
+        pass
+    
+    return None
+
+def format_color(color_tuple):
+    """Format color tuple as string for display."""
+    if color_tuple is None:
+        return "None"
+    return f"RGB({color_tuple[0]}, {color_tuple[1]}, {color_tuple[2]}) / #{color_tuple[0]:02X}{color_tuple[1]:02X}{color_tuple[2]:02X}"
+
+def get_user_input(prompt, default=None, validator=None):
+    """Get user input with optional default value."""
+    if default is not None:
+        prompt = f"{prompt} [{default}]: "
+    else:
+        prompt = f"{prompt}: "
+    
+    while True:
+        user_input = input(prompt).strip()
+        
+        if not user_input and default is not None:
+            return default
+        
+        if not user_input:
+            print("Please provide a value.")
+            continue
+        
+        if validator:
+            result = validator(user_input)
+            if result is None:
+                print("Invalid input. Please try again.")
+                continue
+            return result
+        
+        return user_input
+
+def interactive_menu():
+    """Interactive menu for user input."""
+    print("\n" + "="*60)
+    print("  SPRITE SPLITTER - Interactive Mode")
+    print("="*60 + "\n")
+    
+    config = load_config()
+    
+    # Get input filename
+    print("--- Input File ---")
+    default_input = config.get('last_input_file', '')
+    input_file = get_user_input(
+        "Enter input filename (relative or absolute path)",
+        default=default_input if default_input else None
+    )
+    
+    if not os.path.exists(input_file):
+        print(f"Error: File '{input_file}' not found!")
+        return
+    
+    # Ask about magic color
+    print("\n--- Magic Color Removal ---")
+    last_magic = config.get('last_magic_color')
+    default_response = 'y' if last_magic else 'n'
+    
+    has_magic = get_user_input(
+        "Does the spritesheet have a background color to remove? (y/n)",
+        default=default_response
+    ).lower() in ['y', 'yes']
+    
+    magic_color = None
+    color_tolerance = 50
+    
+    if has_magic:
+        print(f"\nLast used magic color: {format_color(last_magic)}")
+        print("Enter magic color in RGB format (e.g., '255,0,255' or '255 0 255')")
+        print("or HEX format (e.g., '#FF00FF')")
+        
+        magic_color = get_user_input(
+            "Magic color",
+            default=format_color(last_magic) if last_magic else None,
+            validator=lambda x: parse_color(x) if x != format_color(last_magic) else last_magic
+        )
+        
+        if isinstance(magic_color, str):
+            magic_color = last_magic
+        
+        color_tolerance = int(get_user_input(
+            "Color tolerance (0-255, how close colors need to match)",
+            default=str(config.get('last_color_tolerance', 50)),
+            validator=lambda x: int(x) if x.isdigit() and 0 <= int(x) <= 255 else None
+        ))
+    
+    # Get processing parameters
+    print("\n--- Processing Parameters ---")
+    
+    print("Ignore Height: Rows shorter than this will be skipped (useful to filter out small artifacts)")
+    ignore_height = int(get_user_input(
+        "Ignore height (pixels)",
+        default=str(config.get('last_ignore_height', 35)),
+        validator=lambda x: int(x) if x.isdigit() and int(x) >= 0 else None
+    ))
+    
+    print("\nSeparation: Space between sprites in the output (0 for no spacing)")
+    separation = int(get_user_input(
+        "Separation (pixels)",
+        default=str(config.get('last_separation', 0)),
+        validator=lambda x: int(x) if x.isdigit() and int(x) >= 0 else None
+    ))
+    
+    # Get output filename
+    print("\n--- Output File ---")
+    base_name = os.path.splitext(os.path.basename(input_file))[0]
+    default_output = f"output/{base_name}_output.png"
+    
+    output_file = get_user_input(
+        "Output filename",
+        default=default_output
+    )
+    
+    # Ensure .png extension
+    if not output_file.lower().endswith('.png'):
+        output_file += '.png'
+    
+    # Save config
+    config['last_input_file'] = input_file
+    config['last_magic_color'] = magic_color
+    config['last_color_tolerance'] = color_tolerance
+    config['last_ignore_height'] = ignore_height
+    config['last_separation'] = separation
+    save_config(config)
+    
+    # Process the image
+    print("\n" + "="*60)
+    print("Processing...")
+    print("="*60 + "\n")
+    
+    working_file = input_file
+    
+    if magic_color:
+        working_file = remove_magic_color_from_image(
+            input_file,
+            magic_color,
+            color_tolerance=color_tolerance
+        )
+    
+    process_rows(
+        working_file,
+        output_image_path=output_file,
+        separation=separation,
+        ignore_height=ignore_height
+    )
+    
+    print("\n" + "="*60)
+    print("  Processing Complete!")
+    print("="*60 + "\n")
 
 def find_next_standard_size(size, standards=[32, 64, 128, 256, 512]):
     """Find the next standard size greater than or equal to the given size."""
@@ -21,11 +230,20 @@ def find_next_standard_size(size, standards=[32, 64, 128, 256, 512]):
 def pad_sprite(sprite, target_width, target_height):
     """Pads the sprite to match the target width and height."""
     h, w, _ = sprite.shape
+    
+    # If sprite is already larger than or equal to target, return as is or resize
+    if h >= target_height and w >= target_width:
+        return sprite
+    
+    # Ensure target dimensions are at least as large as sprite
+    actual_target_width = max(target_width, w)
+    actual_target_height = max(target_height, h)
+    
     # Calculate padding for centering the sprite
-    top_padding = (target_height - h) // 2
-    bottom_padding = target_height - h - top_padding
-    left_padding = (target_width - w) // 2
-    right_padding = target_width - w - left_padding
+    top_padding = (actual_target_height - h) // 2
+    bottom_padding = actual_target_height - h - top_padding
+    left_padding = (actual_target_width - w) // 2
+    right_padding = actual_target_width - w - left_padding
 
     # Pad the sprite to the target dimensions
     padded_sprite = cv2.copyMakeBorder(
@@ -68,10 +286,6 @@ def merge_intersecting_boxes(contours, x_margin=1, y_margin=1):
                          current_box[2] - x_margin, current_box[3] - y_margin])
     return merged_boxes
 
-
-import cv2
-import numpy as np
-from PIL import Image
 
 def process_rows(image_path, output_image_path='final_spritesheet.png', target_standards=[32, 64, 128, 256, 512], separation=10, ignore_height=32):
     """Processes the rows and generates a single image with standard width and height padding for all sprites."""
@@ -177,12 +391,148 @@ def process_rows(image_path, output_image_path='final_spritesheet.png', target_s
 
     # Save the final image
     final_image_pil = Image.fromarray(cv2.cvtColor(final_image, cv2.COLOR_BGRA2RGBA))
+    
+    # Create subfolder if it doesn't exist
+    output_dir = os.path.dirname(output_image_path)
+    os.makedirs(output_dir, exist_ok=True)
     final_image_pil.save(output_image_path)
 
     print(f"Final image saved as '{output_image_path}'.")
 
+def remove_magic_color_from_image(image_path, magic_color, color_tolerance=10, output_suffix='_no_magic'):
+    """Removes a specific color (magic color) from the image and saves it as a new PNG file.
+    
+    Args:
+        image_path: Path to input image
+        magic_color: Tuple of (R, G, B) representing the color to remove (e.g., (255, 0, 255) for magenta)
+        color_tolerance: Tolerance for color matching (0-255)
+        output_suffix: Suffix to add to the output filename
+    
+    Returns:
+        Path to the new image file with magic color removed
+    """
+    # Load the image
+    image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+    
+    # Ensure image has alpha channel
+    if image.shape[2] == 3:
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2BGRA)
+        
+    # magic_color is in rgb format, convert to bgr for OpenCV
+    magic_color_bgr = (magic_color[2], magic_color[1], magic_color[0])
+    
+    # First, create a mask for exact color match
+    exact_mask = np.all(image[:, :, :3] == magic_color_bgr, axis=2).astype(np.uint8) * 255
+    
+    # Then, create a mask with tolerance for near-matches
+    if color_tolerance > 0:
+        lower_bound = np.array([max(0, magic_color_bgr[0] - color_tolerance),
+                               max(0, magic_color_bgr[1] - color_tolerance),
+                               max(0, magic_color_bgr[2] - color_tolerance)])
+        upper_bound = np.array([min(255, magic_color_bgr[0] + color_tolerance),
+                               min(255, magic_color_bgr[1] + color_tolerance),
+                               min(255, magic_color_bgr[2] + color_tolerance)])
+        
+        tolerance_mask = cv2.inRange(image[:, :, :3], lower_bound, upper_bound)
+        
+        # Combine exact and tolerance masks
+        mask = cv2.bitwise_or(exact_mask, tolerance_mask)
+    else:
+        mask = exact_mask
+        
+    # Set alpha channel to 0 (transparent) where mask matches
+    image[:, :, 3] = np.where(mask == 255, 0, image[:, :, 3])
+    
+    # Generate output path
+    base_name = os.path.splitext(image_path)[0]
+    extension = '.png'
+    output_path = f"{base_name}{output_suffix}{extension}"
+    
+    # Save the image
+    cv2.imwrite(output_path, image)
+    print(f"Magic color removed. Saved as '{output_path}'.")
+    
+    return output_path
 
 
-# Example usage
-image_path = 'adventure_time.png'
-process_rows(image_path, output_image_path='final_spritesheet.png',  separation=0 ,ignore_height=35)
+def main():
+    """Main entry point with CLI argument support."""
+    parser = argparse.ArgumentParser(
+        description='Split spritesheets into individual sprites with optional magic color removal.',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=""":
+Examples:
+  Interactive mode:
+    python process_rows.py
+  
+  Automated mode:
+    python process_rows.py -f input.png -o output/result.png
+    python process_rows.py -f input.jpg -m "#FF00FF" -t 50 -o output.png
+    python process_rows.py --file sprite.png --no-magic-color --ignore-height 40 --separation 5
+        """
+    )
+    
+    parser.add_argument('-f', '--file', help='Input spritesheet file path')
+    parser.add_argument('-o', '--output', help='Output file path (default: output/<filename>_output.png)')
+    parser.add_argument('-m', '--magic-color', help='Magic color to remove (RGB: "255,0,255" or HEX: "#FF00FF")')
+    parser.add_argument('-t', '--tolerance', type=int, default=50, help='Color tolerance for magic color (0-255, default: 50)')
+    parser.add_argument('--no-magic-color', action='store_true', help='Disable magic color removal')
+    parser.add_argument('--ignore-height', type=int, default=35, help='Minimum row height to process (default: 35)')
+    parser.add_argument('-s', '--separation', type=int, default=0, help='Pixel separation between sprites (default: 0)')
+    
+    args = parser.parse_args()
+    
+    # If no file specified, run interactive mode
+    if not args.file:
+        interactive_menu()
+        return
+    
+    # Validate input file
+    if not os.path.exists(args.file):
+        print(f"Error: File '{args.file}' not found!")
+        return
+    
+    # Determine output path
+    if args.output:
+        output_file = args.output
+    else:
+        base_name = os.path.splitext(os.path.basename(args.file))[0]
+        output_file = f"output/{base_name}_output.png"
+    
+    # Ensure .png extension
+    if not output_file.lower().endswith('.png'):
+        output_file += '.png'
+    
+    # Handle magic color
+    magic_color = None
+    if not args.no_magic_color and args.magic_color:
+        magic_color = parse_color(args.magic_color)
+        if magic_color is None:
+            print(f"Error: Invalid magic color format '{args.magic_color}'")
+            print("Use RGB format (255,0,255) or HEX format (#FF00FF)")
+            return
+    
+    # Process the image
+    working_file = args.file
+    
+    if magic_color:
+        print(f"Removing magic color: {format_color(magic_color)}")
+        working_file = remove_magic_color_from_image(
+            args.file,
+            magic_color,
+            color_tolerance=args.tolerance
+        )
+    
+    print(f"Processing spritesheet...")
+    process_rows(
+        working_file,
+        output_image_path=output_file,
+        separation=args.separation,
+        ignore_height=args.ignore_height
+    )
+    
+    print(f"\nProcessing complete!")
+
+
+if __name__ == '__main__':
+    main()
